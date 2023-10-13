@@ -100,6 +100,8 @@ def get_args(description='Disentangled Representation Learning for Text-Video Re
     parser.add_argument('--rec_trans_num_layers2', type=int, default=4)
     parser.add_argument('--tmp_trans_num_layers', type=int, default=4)
     parser.add_argument('--interact_mode', type=str, default='FGW')
+
+    parser.add_argument('--freeze_clip', type=int, default=0)
     
 
 
@@ -581,6 +583,12 @@ def main():
     model = build_model(args)
 
     test_dataloader, val_dataloader, train_dataloader, train_sampler = build_dataloader(args)
+
+    all_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print("training parameters:", trainable_params)
+    print("all parameters:", all_params)
+    print("Percentage of training parameters:", trainable_params/all_params)
 
     ## ####################################
     # train and eval

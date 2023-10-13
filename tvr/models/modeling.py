@@ -175,6 +175,11 @@ class SLIP(nn.Module):
         self.apply(self.init_weights)  # random init must before loading pretrain
         self.clip.load_state_dict(state_dict, strict=False)
 
+        if config.freeze_clip:
+            print("Turning off gradients in both the video and the text encoder")
+            for name, param in self.clip.named_parameters():
+                    param.requires_grad_(False)
+                    
         ## ===> Initialization trick [HARD CODE]
         new_state_dict = OrderedDict()
                 
@@ -240,18 +245,18 @@ class SLIP(nn.Module):
                 video_mask = video_mask[:, : -1]
 
             # rec_text_loss, rec_video_loss , temporal_loss = 0,0,0
-            rec_video_loss, rec_text_loss = self.get_rec_loss(text_feat, video_feat, text_mask, video_mask, text_weight, video_weight)
-            temporal_loss = self.get_temporal_order_loss(text_feat, video_feat, text_mask, video_mask, text_weight, video_weight)
+            # rec_video_loss, rec_text_loss = self.get_rec_loss(text_feat, video_feat, text_mask, video_mask, text_weight, video_weight)
+            # temporal_loss = self.get_temporal_order_loss(text_feat, video_feat, text_mask, video_mask, text_weight, video_weight)
             # moment-text rec
             # rec_mt, rec_tm, div_loss, ivc_loss, rec_ref_loss, rec_neg1_loss, rec_neg2_loss, _ = self.get_moment_text_rec(text_feat, video_feat, text_mask, video_mask, props, text_weight, epoch)
             # rec_mt, rec_tm, div_loss, ivc_loss, rec_ref_loss, rec_neg1_loss, rec_neg2_loss = rec_mt.mean(), rec_tm.mean(), div_loss.mean(), ivc_loss.mean(), rec_ref_loss.mean(), rec_neg1_loss.mean(), rec_neg2_loss.mean()
-            final_loss = self.ret_loss_weight * retrieval_loss + self.rec_loss_weight * (rec_video_loss + rec_text_loss)/2.0 + self.temp_loss_weight * temporal_loss
+            final_loss = self.ret_loss_weight * retrieval_loss #+ self.rec_loss_weight * (rec_video_loss + rec_text_loss)/2.0 + self.temp_loss_weight * temporal_loss
             # final_loss = self.ret_loss_weight * retrieval_loss + self.rec_loss_weight * (rec_video_loss + rec_text_loss)/2.0 + ivc_loss + rec_mt #+ div_loss + rec_mt * self.lambda1 #( + rec_tm)/2.0
        
             final_loss_dict = {'final_loss': final_loss.item(), 
                                 'retrieval_loss': self.ret_loss_weight * retrieval_loss.item(), 
-                                'rec_video_loss': self.rec_loss_weight * rec_video_loss.item(), 
-                                'rec_text_loss': self.rec_loss_weight * rec_text_loss.item(),
+                                # 'rec_video_loss': self.rec_loss_weight * rec_video_loss.item(), 
+                                # 'rec_text_loss': self.rec_loss_weight * rec_text_loss.item(),
                                 # 'rec_tm_loss': (self.lambda1 * rec_tm).item(),
                                 # 'div_loss': div_loss.item(),
                                 # 'ivc_loss': ivc_loss.item(),
@@ -586,10 +591,10 @@ class SLIP(nn.Module):
             video_weight = torch.softmax(video_weight, dim=-1)  # B_v x N_v
             # video_weight = torch.sigmoid(video_weight)  # B_v x N_v
             # ################################################################
-            _, t_mask = self._mask_feat(text_feat, text_mask.sum(1), text_weight, mask_rate=0.8, mode='topk', mask_idx='0')
-            text_mask = text_mask * t_mask.squeeze(-1)
-            _, v_mask = self._mask_feat(video_feat, video_mask.sum(1), video_weight, mask_rate=0.8, mode='topk', mask_idx='0')
-            video_mask = video_mask * v_mask.squeeze(-1)
+            # _, t_mask = self._mask_feat(text_feat, text_mask.sum(1), text_weight, mask_rate=0.8, mode='topk', mask_idx='0')
+            # text_mask = text_mask * t_mask.squeeze(-1)
+            # _, v_mask = self._mask_feat(video_feat, video_mask.sum(1), video_weight, mask_rate=0.8, mode='topk', mask_idx='0')
+            # video_mask = video_mask * v_mask.squeeze(-1)
 
             text_feat = text_feat / text_feat.norm(dim=-1, keepdim=True)
             video_feat = video_feat / video_feat.norm(dim=-1, keepdim=True)
