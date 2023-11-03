@@ -245,20 +245,20 @@ class SLIP(nn.Module):
                 video_mask = video_mask[:, : -1]
 
             # rec_text_loss, rec_video_loss , temporal_loss = 0,0,0
-            # rec_video_loss, rec_text_loss = self.get_rec_loss(text_feat, video_feat, text_mask, video_mask, text_weight, video_weight)
+            rec_video_loss, rec_text_loss = self.get_rec_loss(text_feat, video_feat, text_mask, video_mask, text_weight, video_weight)
             # temporal_loss = self.get_temporal_order_loss(text_feat, video_feat, text_mask, video_mask, text_weight, video_weight)
             # moment-text rec
-            # rec_mt, rec_tm, div_loss, ivc_loss, rec_ref_loss, rec_neg1_loss, rec_neg2_loss, _ = self.get_moment_text_rec(text_feat, video_feat, text_mask, video_mask, props, text_weight, epoch)
-            # rec_mt, rec_tm, div_loss, ivc_loss, rec_ref_loss, rec_neg1_loss, rec_neg2_loss = rec_mt.mean(), rec_tm.mean(), div_loss.mean(), ivc_loss.mean(), rec_ref_loss.mean(), rec_neg1_loss.mean(), rec_neg2_loss.mean()
-            final_loss = self.ret_loss_weight * retrieval_loss #+ self.rec_loss_weight * (rec_video_loss + rec_text_loss)/2.0 + self.temp_loss_weight * temporal_loss
-            # final_loss = self.ret_loss_weight * retrieval_loss + self.rec_loss_weight * (rec_video_loss + rec_text_loss)/2.0 + ivc_loss + rec_mt #+ div_loss + rec_mt * self.lambda1 #( + rec_tm)/2.0
-       
+            rec_mt, rec_tm, div_loss, ivc_loss, rec_ref_loss, rec_neg1_loss, rec_neg2_loss, _ = self.get_moment_text_rec(text_feat, video_feat, text_mask, video_mask, props, text_weight, epoch)
+            rec_mt, rec_tm, div_loss, ivc_loss, rec_ref_loss, rec_neg1_loss, rec_neg2_loss = rec_mt.mean(), rec_tm.mean(), div_loss.mean(), ivc_loss.mean(), rec_ref_loss.mean(), rec_neg1_loss.mean(), rec_neg2_loss.mean()
+            # final_loss = self.ret_loss_weight * retrieval_loss + self.rec_loss_weight * (rec_video_loss + rec_text_loss)/2.0 + self.temp_loss_weight * temporal_loss
+            final_loss = self.ret_loss_weight * retrieval_loss + self.rec_loss_weight * (rec_video_loss + rec_text_loss)/2.0 + ivc_loss + rec_mt + div_loss #+ rec_mt * self.lambda1 #( + rec_tm)/2.0
+
             final_loss_dict = {'final_loss': final_loss.item(), 
                                 'retrieval_loss': self.ret_loss_weight * retrieval_loss.item(), 
-                                # 'rec_video_loss': self.rec_loss_weight * rec_video_loss.item(), 
-                                # 'rec_text_loss': self.rec_loss_weight * rec_text_loss.item(),
+                                'rec_video_loss': self.rec_loss_weight * rec_video_loss.item(), 
+                                'rec_text_loss': self.rec_loss_weight * rec_text_loss.item(),
                                 # 'rec_tm_loss': (self.lambda1 * rec_tm).item(),
-                                # 'div_loss': div_loss.item(),
+                                'div_loss': div_loss.item(),
                                 # 'ivc_loss': ivc_loss.item(),
                                 # 'rec_mt_loss': rec_mt.item(),
                                 # 'rec_ref_loss':rec_ref_loss.item(),
@@ -600,18 +600,18 @@ class SLIP(nn.Module):
             video_feat = video_feat / video_feat.norm(dim=-1, keepdim=True)
             cls_feat = cls/cls.norm(dim=-1, keepdim=True)
             # 
-            retrieve_logits1 = torch.einsum('atd,bvd->abtv', [text_feat, video_feat])
-            retrieve_logits1 = torch.einsum('abtv,at->abtv', [retrieve_logits1, text_mask])
-            retrieve_logits1 = torch.einsum('abtv,bv->abtv', [retrieve_logits1, video_mask.squeeze(-1)])
+            retrieve_logits = torch.einsum('atd,bvd->abtv', [text_feat, video_feat])
+            retrieve_logits = torch.einsum('abtv,at->abtv', [retrieve_logits, text_mask])
+            retrieve_logits = torch.einsum('abtv,bv->abtv', [retrieve_logits, video_mask.squeeze(-1)])
             text_sum = text_mask.sum(-1)
             video_sum = video_mask.sum(-1)
 
             if self.interact_mode == 'FGW':
                 # weighted token-wise interaction
-                t2v_logits, max_idx1 = retrieve_logits1.max(dim=-1)  # abtv -> abt
+                t2v_logits, max_idx1 = retrieve_logits.max(dim=-1)  # abtv -> abt
                 t2v_logits = torch.einsum('abt,at->ab', [t2v_logits, text_weight])
 
-                v2t_logits, max_idx2 = retrieve_logits1.max(dim=-2)  # abtv -> abv
+                v2t_logits, max_idx2 = retrieve_logits.max(dim=-2)  # abtv -> abv
                 v2t_logits = torch.einsum('abv,bv->ab', [v2t_logits, video_weight])
                 retrieve_logits = (t2v_logits + v2t_logits) / 2.0
                 # bsz, frame_len, T = video_feat.shape
@@ -623,7 +623,7 @@ class SLIP(nn.Module):
              
                 # retrieve_logits2 = torch.einsum('ad,bvd->abv', [cls_feat, video_feat])
                 # retrieve_logits2 = torch.einsum('abv,bv->ab', [retrieve_logits2, gauss_weight])
-                # retrieve_logits = retrieve_logits1 + retrieve_logits2 * 0.1
+                # retrieve_logits = retrieve_logits + retrieve_logits2 * 0.1
 
 
             elif self.interact_mode == 'FGM':
@@ -654,7 +654,13 @@ class SLIP(nn.Module):
                 text_feat = torch.sum(text_feat, dim=1) / (text_sum.unsqueeze(1))
                 video_feat = torch.sum(video_feat, dim=1) / (video_sum.unsqueeze(1))
                 retrieve_logits = torch.einsum('ad,bd->ab', [text_feat, video_feat])
-                
+            elif self.interact_mode == 'TI':
+                t2v_logits, max_idx1 = retrieve_logits.max(dim=-1)  # abtv -> abt
+                v2t_logits, max_idx2 = retrieve_logits.max(dim=-2)  # abtv -> abv
+                t2v_logits = torch.sum(t2v_logits, dim=2) / (text_sum.unsqueeze(1))
+                v2t_logits = torch.sum(v2t_logits, dim=2) / (video_sum.unsqueeze(0))
+                retrieve_logits = (t2v_logits + v2t_logits) / 2.0
+
         return retrieve_logits, retrieve_logits.T, text_weight, video_weight, props
         # return retrieve_logits, retrieve_logits.T, props
 
